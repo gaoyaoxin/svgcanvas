@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Title of the Page</title>
+    <link href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="//cdnjs.cloudflare.com/ajax/libs/codemirror/5.12.0/codemirror.min.css" rel="stylesheet" />
+    <style type="text/css">
+    .mv50 { margin-top: 50px; margin-bottom: 50px; }
+    .axes { stroke: blue; }
+    #axis { stroke: red; }
+    svg .guides line {
+        stroke: #ccc;
+        stroke-dasharray: 3;
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+    }
+    </style>
+</head>
+<body>
+
+<div id="app" class="container mv50" style="display: none" v-show="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="100%" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="-1000 -1000 2000 2000">
+        <defs>
+            <path id="axis" d="M-1000,0 L1000,0" />
+            <circle id="vertex" r="10" />
+            <line id="vector" x1="0" y1="0" x2="100" y1="0" stroke="black" stroke-width="1" />
+        </defs>
+        <g class="axes">
+            <use xlink:href="#axis" />
+            <use xlink:href="#axis" transform="rotate(90)" />
+        </g>
+        <g class="guides">
+            <line v-for="x in [-750, -500, -250, 0, 250, 500, 750]" :x1="x" y1="-1000" :x2="x" y2="1000" />
+            <line v-for="y in [-750, -500, -250, 0, 250, 500, 750]" x1="-1000" :y1="y" x2="1000" :y2="y" />
+        </g>
+        <circle :r="dist(a)" fill="none" stroke="black" stroke-width="1" />
+        <line x1="0" y1="0" :x2="a.x" :y2="a.y" stroke="black" stroke-width="1" />
+        <use @mousedown="dd([a], [a], [], $event)" :x="a.x" :y="a.y" xlink:href="#vertex" fill="red" />
+        <path :d="arc(a, true)" fill="#f88" />
+        <path :d="arc(a)" fill="none" stroke="black" stroke-width="10" />
+        <use :x="polarToCartesian(0, 0, 100, angle(a)/2).x" :y="polarToCartesian(0, 0, 100, angle(a)/2).y" xlink:href="#vertex" fill="yellow" />
+        <text :transform="'rotate(' + angle(a)/2 + ' ' + polarToCartesian(0, 0, 100, angle(a)/2).x + ' ' + polarToCartesian(0, 0, 100, angle(a)/2).y + ')'" style="font-size: 64" :x="polarToCartesian(0, 0, 100, angle(a)/2).x" :y="polarToCartesian(0, 0, 100, angle(a)/2).y">{{ angle(a).toFixed(0) }}</text>
+        <use :x="aa.x" :y="aa.y" xlink:href="#vector" stroke="red" :transform="'rotate(' + angle(a)/2 + ' ' + polarToCartesian(0, 0, 100, angle(a)/2).x + ' ' + polarToCartesian(0, 0, 100, angle(a)/2).y + ')'" />
+        <rect @mousedown="dd([aa], [aa], [], $event)" :x="aa.x" :y="aa.y" width="200" height="150" fill="#88f" opacity="0.5" />
+        <!-- tangent -->
+        <line x1="0" y1="0" :x2="aa.x" :y2="aa.y" stroke="blue" stroke-width="10" />
+        <line :x1="aa.x - polar(100, angle(a)/2 + 90).x" :y1="aa.y - polar(100, angle(a)/2 + 90).y" :x2="aa.x + polar(100, angle(a)/2 + 90).x" :y2="aa.y + polar(100, angle(a)/2 + 90).y" stroke="#f8f" stroke-width="10" />
+        <tangent :r="300" :a="angle(a)" :w="400" stroke="black" stroke-width="5"></tangent>
+        <plot f="0.99*x - 250" :g="range(-500, 500, 10)" />
+    </svg>
+</div>
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.2/jquery.min.js" type="text/javascript"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/js/bootstrap.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/vue/1.0.18/vue.min.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+    (function () {
+
+        // Quadrilateral
+        // =============
+        //
+        // 2d shape that have 4 sides, 4 vertices, and 4 angles.
+        // Any closed shape which have 4 sides.
+        //
+        // Types
+        // -----
+        //
+        // * Concave
+        //   It has an interior angle that is larger than 180 degrees.
+        //
+        // * Convex
+        //   All of it interior angles are less than 180 degrees.
+        //
+        //     * Trapezoid
+        //       Has exactly 1 pair of parallel sides.
+        //
+        //     * Paralellogram
+        //       Has 2 pairs of parallel sides. (Opposite sides are
+        //       parallel.)
+        //
+        //         * Rectangle
+        //           Have four right angles.
+        //
+        //         * Rhombus
+        //           All four sides have the same length. (All four
+        //           sides are congruent.)
+        //
+        //         * Square
+        //           Have four right angles, and all four sides have
+        //           the same length. (May I say that a square is a
+        //           shape with all four sides are congruent?)
+        //
+        // Properties
+        // ----------
+        //
+        // https://www.khanacademy.org/math/basic-geo/basic-geo-shapes/basic-geo-classifying-shapes/v/quadrilateral-overview?qa_expand_key=kaencrypted_a0348a408548793eac8174fc78d59702_92c302cff51cebc6d76da28c1f000a0ffa28b707aea8a9e663a9becde9b1805cc9cf21ff576b21be689a70894a853b50f6414a41aab9d0c79dbb8e69039070575de05d3d26448e8babc2b24cd251d52a71338649a10f2809ea05cd893e60d21a56e020195f97001b261f0b9283ae7f4b411fcd0b32e68b8ab8c5cd5a061d3ca4ea8490694c773c81f2bc64a8727b1028917172986ca95e4d405114ac3351120a
+        // > The sum of the interior angles will always equal 360 degrees.
+
+        function quadrilateral(x1, y1, x2, y2, x3, y3, x4, y3)
+        {
+        }
+
+        function range(begin, end, step)
+        {
+            var i,
+                n = step || 1,
+                ret = [];
+            for (i = begin; i < end;  i += n) {
+                ret.push(i);
+            }
+            return ret;
+        }
+
+        // https://en.wikipedia.org/wiki/Degree_(angle)
+        // http://www.mathopenref.com/degrees.html
+        function deg(angleInDegrees)
+        {
+            return angleInDegrees * Math.PI / 180.0;
+        }
+
+        // https://en.wikipedia.org/wiki/Radian
+        function rad(angleInRadians)
+        {
+            return angleInRadians;
+        }
+
+        // https://en.wikipedia.org/wiki/Turn_(geometry)
+        function turn(angleInTurns)
+        {
+            return angleInTurns * Math.PI * 2;
+        }
+
+        function polar(radius, angleInDegrees)
+        {
+            var angleInRadians = angleInDegrees * Math.PI / 180.0;
+            return {
+                x: radius * Math.cos(angleInRadians),
+                y: radius * Math.sin(angleInRadians)
+            };
+        }
+
+        function cartesian(x, y)
+        {
+        }
+
+        function alignToGrid(x, grid)
+        {
+            return Math.round(x / grid) * grid;
+        }
+
+        function distance(x1, y1, x2, y2)
+        {
+            var dx = x1 - x2,
+                dy = y1 - y2;
+            return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        function angle(x1, y1, x2, y2)
+        {
+            return Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+        }
+
+// http://stackoverflow.com/a/18473154/1478566
+function polarToCartesian(centerX, centerY, radius, angleInDegrees)
+{
+    var angleInRadians = angleInDegrees * Math.PI / 180.0;
+    return {
+        x: centerX + radius*Math.cos(angleInRadians),
+        y: centerY + radius*Math.sin(angleInRadians)
+    };
+}
+
+// http://stackoverflow.com/a/18473154/1478566
+function arc(x, y, radius, startAngle, endAngle, close)
+{
+    var start = polarToCartesian(x, y, radius, startAngle),
+        end = polarToCartesian(x, y, radius, endAngle),
+        sweepFlag = 1,
+        angle = (endAngle - startAngle + 360) % 360,
+        largeArcFlag = angle < 180 ? !sweepFlag : sweepFlag,
+        rx = radius,
+        ry = radius,
+        xAxisRotation = 0,
+        path = ['M', start.x, start.y, 'A', rx, ry, xAxisRotation, Number(largeArcFlag), Number(sweepFlag), end.x, end.y];
+
+    if (close) {
+        path.push('L', x, y, 'z');
+    }
+
+    return path.join(' ');
+}
+
+        // For rendering functions, e.g. f(x) = 0.5x + x^2 + 3
+        var Plot = Vue.extend({
+            template: '<circle v-for="a in points" :cx="a.x" :cy="a.y" r="3" />',
+            props: ['f', 'g'],
+            computed: {
+                points: function () {
+                    var i = 0,
+                        points = [],
+                        f = new Function ('x', 'return ' + this.f),
+                        x = this.g,
+                        len = x.length;
+                    for (i = 0; i < len; ++i) {
+                        points.push({x: x[i], y: f(x[i])});
+                    }
+                    return points;
+                }
+            }
+        });
+
+        // http://www.everythingmaths.co.za/maths/grade-12/06-differential-calculus/06-differential-calculus-04.cnxmlplus
+        var Tangent = Vue.extend({
+            template: '<line :x1="x1" :x2="x2" :y1="y1" :y2="y2" />',
+            props: ['r', 'a', 'w'],
+            data: function () {
+                return this.update({});
+            },
+            methods: {
+                update: function (v) {
+                    var c = polar(this.r, this.a);
+                    v.x1 = c.x;
+                    v.y1 = c.y;
+                    v.x2 = c.x + 100;
+                    v.y2 = c.y + 100;
+                    return v;
+                }
+            },
+            ready: function () {
+                this.$watch('a', this.update.bind(this, this), true);
+            }
+        });
+
+        new Vue({
+            el: '#app',
+            data: {
+                a: {dragging: false, x: 500, y: 100},
+                aa: {x: 0, y: 0}
+            },
+            components: {
+                tangent: Tangent,
+                plot: Plot
+            },
+            watch: {
+                'a.x': function () {
+                    this.aa = polarToCartesian(0, 0, 100, this.angle(this.a)/2);
+                }
+            },
+            methods: {
+                range: range,
+                polarToCartesian: polarToCartesian,
+                polar: polar,
+                arc: function (pt, close) {
+                    return arc(0, 0, 100, 0, this.angle(pt), close);
+                },
+                angle: function (pt) {
+                    var tmp = angle(0, 0, pt.x, pt.y);
+                    if (tmp < 0) {
+                        return tmp + 360;
+                    }
+                    return tmp;
+                },
+                dist: function (pt) {
+                    return distance(0, 0, pt.x, pt.y);
+                },
+                dd: function (x, y, dragging, event) {
+                    // http://stackoverflow.com/a/22185664/1478566
+                    var point = event.target.ownerSVGElement.createSVGPoint(),
+                        screenCTM = event.target.getScreenCTM();
+                    function transform(event) {
+                        point.x = event.clientX;
+                        point.y = event.clientY;
+                        return point.matrixTransform(screenCTM.inverse());
+                    }
+                    var start = transform(event),
+                        origX = x.map(function (v) { return v.x; }),
+                        origY = y.map(function (v) { return v.y; }),
+                        listeners = {mousemove: move, mouseup: stop};
+                    dragging.forEach(function (v) { v.dragging = true; });
+                    jQuery(document).on(listeners);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    function move(event) {
+                        if (event.buttons != 1) { stop(event); return; }
+                        var tmp = transform(event);
+                        x.forEach(function (v, i) { v.x = origX[i] + (tmp.x - start.x); });
+                        y.forEach(function (v, i) { v.y = origY[i] + (tmp.y - start.y); });
+                    }
+                    function stop(event) {
+                        dragging.forEach(function (v) { v.dragging = false; });
+                        jQuery(document).off(listeners);
+                    }
+                }
+            }
+        });
+
+    })();
+</script>
+
+</body>
+</html>
